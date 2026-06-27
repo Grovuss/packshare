@@ -1,0 +1,13 @@
+{
+  "name": "packshare-site",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Static frontend for packshare.site using Firebase Firestore metadata and Cloudflare R2 Worker file storage.",
+  "scripts": {
+    "dev": "npx serve .",
+    "start": "npx serve ."
+  },
+  "devDependencies": {
+    "serve": "latest"
+  }
+}

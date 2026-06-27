@@ -1,0 +1,19 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /packs/{slug} {
+      allow read: if true;
+
+      allow create: if request.auth != null
+        && request.resource.data.slug == slug
+        && request.resource.data.name is string
+        && request.resource.data.size is number
+        && request.resource.data.size <= 50 * 1024 * 1024
+        && request.resource.data.uploadedAt is number
+        && request.resource.data.fileKey == "packs/" + slug + ".mrpack";
+
+      allow update, delete: if false;
+    }
+  }
+}
