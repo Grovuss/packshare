@@ -161,6 +161,46 @@
   .retention-box select:focus { border-color: var(--green); box-shadow: 0 0 0 3px var(--green-glow); }
   .retention-box select option:disabled { color: var(--muted); }
   .retention-box p { color: var(--muted); font-size: 0.75rem; margin-top: 8px; }
+  .pack-note {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 0.72rem;
+  }
+  .cf-note {
+    margin: 0 24px 16px;
+    padding: 10px 14px;
+    background: rgba(74,222,128,0.055);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    font-size: 0.78rem;
+  }
+  .cf-note strong { color: var(--text); }
+  .mod-info { flex: 1; min-width: 0; }
+  .mod-sub {
+    margin-top: 1px;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.66rem;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mod-page-btn {
+    flex-shrink: 0;
+    border: 1px solid var(--border-hi);
+    background: var(--surface);
+    color: var(--green);
+    border-radius: 7px;
+    padding: 5px 9px;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.66rem;
+    text-decoration: none;
+    transition: border-color 0.12s, background 0.12s, color 0.12s;
+  }
+  .mod-page-btn:hover { border-color: var(--green); background: var(--green-dim); }
+  .mod-page-btn.disabled { color: var(--muted); pointer-events: none; opacity: 0.55; }
+
   .pack-type-pill {
     display: inline-block;
     margin-top: 6px;
@@ -370,6 +410,7 @@
             <div class="fname" id="fname-lbl"></div>
             <div class="fsize" id="fsize-lbl"></div>
             <div class="fsize" id="ftype-lbl"></div>
+            <div class="pack-note" id="pack-note-lbl"></div>
           </div>
           <button class="rm-btn" id="remove-btn">Remove</button>
         </div>
@@ -445,6 +486,10 @@ import { getFirestore, doc, setDoc, getDoc, Timestamp } from 'https://www.gstati
 // Cloudflare Worker URL for R2 uploads/downloads
 const WORKER_URL = 'https://packshare-api.grovuss.workers.dev';
 
+// Optional: once your custom domain is connected in Vercel, set this to 'https://packshare.site'.
+// Leave blank while testing on Vercel preview/production URLs.
+const CANONICAL_SITE_URL = '';
+
 const firebaseConfig = {
   apiKey:            'AIzaSyDcHMSKtQFjT5Mothkkt66wHKYeQjJhn_E',
   authDomain:        'packshare-e4e0b.firebaseapp.com',
@@ -517,10 +562,13 @@ function showPage(id) {
   document.getElementById(id).classList.add('active');
 }
 
+function getBaseUrl() {
+  if (CANONICAL_SITE_URL) return CANONICAL_SITE_URL.replace(/\/$/, '');
+  return `${location.origin}${location.pathname.replace(/\/index\.html$/, '')}`.replace(/\/$/, '');
+}
+
 function goHome() {
-  location.hash = '';
-  showPage('upload-page');
-  resetAll();
+  window.location.href = `${getBaseUrl()}/`;
 }
 
 // ── file validation & modpack parsing ─────────────────────────
@@ -556,6 +604,9 @@ async function pickFile(f) {
   document.getElementById('fname-lbl').textContent = f.name;
   document.getElementById('fsize-lbl').textContent = fmtSize(f.size);
   document.getElementById('ftype-lbl').innerHTML = `<span class="pack-type-pill">${packKind === 'curseforge' ? 'CurseForge ZIP' : 'Modrinth MRPACK'}</span>`;
+  document.getElementById('pack-note-lbl').textContent = packKind === 'curseforge'
+    ? 'CurseForge exports include project/file IDs, not readable mod names.'
+    : '';
   document.getElementById('drop-zone').style.display = 'none';
   updateRetentionOptions();
   showEl('file-selected');
@@ -575,7 +626,14 @@ async function parseModrinthPack(zip) {
     .map(m => {
       const raw  = m.path.replace(/^mods\//, '').replace(/\.jar(\.disabled)?$/, '');
       const name = raw.replace(/[-_](\d[\w.\+-]*)$/, '').replace(/[-_]/g, ' ');
-      return { name: titleCase(name), raw };
+      const hashes = m.hashes || {};
+      return {
+        name: titleCase(name),
+        raw,
+        sha1: hashes.sha1 || '',
+        sha512: hashes.sha512 || '',
+        pageUrl: '',
+      };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -596,10 +654,13 @@ async function parseCurseForgePack(zip) {
   parsedMods = manifest.files
     .filter(m => m.projectID && m.fileID)
     .map(m => ({
-      name: `CurseForge project ${m.projectID}`,
-      raw: `${m.projectID}:${m.fileID}`,
+      name: `Project ${m.projectID}`,
+      raw: `File ${m.fileID}`,
+      projectID: m.projectID,
+      fileID: m.fileID,
+      pageUrl: '',
     }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => String(a.projectID).localeCompare(String(b.projectID)));
 }
 
 function resetFile() {
@@ -607,6 +668,7 @@ function resetFile() {
   document.getElementById('file-input').value = '';
   document.getElementById('drop-zone').style.display = '';
   document.getElementById('ftype-lbl').textContent = '';
+  document.getElementById('pack-note-lbl').textContent = '';
   hideEl('file-selected');
   hideErr();
 }
@@ -698,13 +760,16 @@ async function doUpload() {
     const workerData = await res.json().catch(() => null);
     if (!workerData || !workerData.fileKey) throw new Error('Worker did not return a fileKey.');
 
+    setBar(76, 'Resolving mod pages…');
+    const resolvedMods = await resolveModPages(packKind, parsedMods);
+
     setBar(80, 'Saving metadata…');
 
     const meta = {
       slug,
       name: pickedFile.name,
       size: pickedFile.size,
-      mods: parsedMods,
+      mods: resolvedMods,
       uploadedAt: Date.now(),
       expiresAt: Timestamp.fromMillis(expiresAtMs),
       expiresAtMs,
@@ -719,7 +784,7 @@ async function doUpload() {
     await wait(300);
 
     hideEl('progress');
-    const shareUrl = `${location.origin}${location.pathname}#/p/${slug}`;
+    const shareUrl = `${getBaseUrl()}/#/p/${slug}`;
     document.getElementById('share-url-display').textContent = shareUrl;
     showEl('success');
 
@@ -749,6 +814,7 @@ function resetAll() {
   document.getElementById('file-input').value = '';
   document.getElementById('drop-zone').style.display = '';
   document.getElementById('ftype-lbl').textContent = '';
+  document.getElementById('pack-note-lbl').textContent = '';
   hideEl('file-selected'); hideEl('progress'); hideEl('success');
   hideErr();
 }
@@ -764,6 +830,7 @@ async function openDownloadPage(slug) {
     const snap = await getDoc(doc(db, 'packs', slug));
     if (!snap.exists()) throw new Error('not found');
     const meta = snap.data();
+    meta.mods = await resolveModPages(meta.packKind, meta.mods || []);
     dlPackData = { meta, slug };
     card.innerHTML = buildDLCard(meta);
     card.querySelector('#dl-download-btn').addEventListener('click', () => triggerDownload());
@@ -782,11 +849,20 @@ async function openDownloadPage(slug) {
 function buildDLCard(meta) {
   const mods = meta.mods || [];
   const modRows = mods.length
-    ? mods.map(m => `
+    ? mods.map(m => {
+        const pageUrl = safeHttpUrl(m.pageUrl || m.url || '');
+        return `
         <div class="mod-item">
           <div class="mod-dot"></div>
-          <span class="mod-name">${esc(m.name || m.raw)}</span>
-        </div>`).join('')
+          <div class="mod-info">
+            <div class="mod-name">${esc(m.name || m.raw)}</div>
+            ${m.raw ? `<div class="mod-sub">${esc(m.raw)}</div>` : ''}
+          </div>
+          ${pageUrl
+            ? `<a class="mod-page-btn" href="${esc(pageUrl)}" target="_blank" rel="noopener noreferrer">Page ↗</a>`
+            : `<span class="mod-page-btn disabled">No page</span>`}
+        </div>`;
+      }).join('')
     : `<div class="no-modlist">No mod list available.</div>`;
 
   const ext = meta.extension || (String(meta.name || '').toLowerCase().endsWith('.zip') ? 'zip' : 'mrpack');
@@ -808,6 +884,9 @@ function buildDLCard(meta) {
       </div>
     </div>
 
+    ${meta.packKind === 'curseforge' ? `
+    <div class="cf-note"><strong>Note:</strong> CurseForge mod names and page links use the CurseForge API when your Worker has a <code>CURSEFORGE_API_KEY</code> secret. Without that key, Packshare falls back to project/file IDs.</div>` : ''}
+
     ${mods.length ? `
     <div class="modlist-wrap">
       <div class="modlist-head">
@@ -825,6 +904,39 @@ function buildDLCard(meta) {
       </div>
     </div>
   `;
+}
+
+async function resolveModPages(kind, mods) {
+  if (!Array.isArray(mods) || mods.length === 0) return [];
+
+  // Do not keep calling the Worker if everything already has a page URL.
+  if (mods.every(m => m && m.pageUrl)) return mods;
+
+  try {
+    const res = await fetch(`${WORKER_URL}/api/resolve-mods`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ packKind: kind, mods }),
+    });
+
+    if (!res.ok) return mods;
+    const data = await res.json();
+    if (!data || !Array.isArray(data.mods)) return mods;
+    return data.mods;
+  } catch (_) {
+    return mods;
+  }
+}
+
+function safeHttpUrl(url) {
+  const s = String(url || '').trim();
+  if (!s) return '';
+  try {
+    const u = new URL(s);
+    return (u.protocol === 'https:' || u.protocol === 'http:') ? u.href : '';
+  } catch (_) {
+    return '';
+  }
 }
 
 function triggerDownload() {
