@@ -128,6 +128,56 @@
   .btn-primary:hover { opacity: 0.88; box-shadow: 0 0 18px rgba(74,222,128,0.3); }
   .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
 
+
+
+  /* retention selector */
+  .retention-box {
+    margin: 16px 24px 0;
+    padding: 14px;
+    background: rgba(74,222,128,0.055);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .retention-box label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: 8px;
+  }
+  .retention-box select {
+    width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border-hi);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.86rem;
+    outline: none;
+  }
+  .retention-box select:focus { border-color: var(--green); box-shadow: 0 0 0 3px var(--green-glow); }
+  .retention-box select option:disabled { color: var(--muted); }
+  .retention-box p { color: var(--muted); font-size: 0.75rem; margin-top: 8px; }
+  .pack-type-pill {
+    display: inline-block;
+    margin-top: 6px;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.66rem;
+    color: var(--green);
+    background: var(--green-dim);
+    border-radius: 99px;
+    padding: 2px 8px;
+  }
+  .expiry-line {
+    margin-top: 6px;
+    color: var(--green);
+    font-family: 'Space Mono', monospace;
+    font-size: 0.72rem;
+  }
+
   /* error */
   .err {
     display: none; margin: 0 24px 16px;
@@ -280,14 +330,14 @@
 
   <header>
     <div class="logo" id="logo-btn">packshare<span>.site</span></div>
-    <span class="badge">.mrpack</span>
+    <span class="badge">.mrpack / .zip</span>
   </header>
 
   <!-- ░░ UPLOAD PAGE ░░ -->
   <div class="page active" id="upload-page">
     <div class="hero">
       <h1>Drop your pack.<br><em>Share a link.</em></h1>
-      <p>Upload an <span style="font-family:'Space Mono',monospace;color:var(--green)">.mrpack</span> file and get a shareable link instantly.</p>
+      <p>Upload a Modrinth <span style="font-family:'Space Mono',monospace;color:var(--green)">.mrpack</span> or CurseForge <span style="font-family:'Space Mono',monospace;color:var(--green)">.zip</span> modpack and get a temporary share link.</p>
     </div>
 
     <div class="card">
@@ -302,9 +352,9 @@
         </div>
         <div class="drop-text">
           <strong>Drag &amp; drop your modpack here</strong>
-          <small>or click to browse &nbsp;·&nbsp; <span class="ext">.mrpack</span> only &nbsp;·&nbsp; max 50 MB</small>
+          <small>or click to browse &nbsp;·&nbsp; <span class="ext">.mrpack</span> / <span class="ext">.zip</span> &nbsp;·&nbsp; max 50 MB</small>
         </div>
-        <input type="file" id="file-input" accept=".mrpack">
+        <input type="file" id="file-input" accept=".mrpack,.zip,application/zip">
       </div>
 
       <!-- file selected -->
@@ -319,12 +369,22 @@
           <div class="finfo">
             <div class="fname" id="fname-lbl"></div>
             <div class="fsize" id="fsize-lbl"></div>
+            <div class="fsize" id="ftype-lbl"></div>
           </div>
           <button class="rm-btn" id="remove-btn">Remove</button>
         </div>
         <div class="err" id="err-msg"></div>
+        <div class="retention-box">
+          <label for="retention-select">Link lifetime</label>
+          <select id="retention-select">
+            <option value="7">7 days · up to 50 MB</option>
+            <option value="14">14 days · up to 25 MB</option>
+            <option value="30">30 days · up to 10 MB</option>
+          </select>
+          <p id="retention-note">Files are automatically deleted after the selected time. Larger packs have shorter limits.</p>
+        </div>
         <div class="card-footer">
-          <span class="hint">No account needed.</span>
+          <span class="hint" id="expiry-hint">Links delete automatically after 7 days.</span>
           <button class="btn-primary" id="share-btn">Share Pack →</button>
         </div>
       </div>
@@ -379,7 +439,7 @@
 <script type="module">
 import { initializeApp }                        from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, signInAnonymously }           from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getFirestore, doc, setDoc, getDoc }   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getFirestore, doc, setDoc, getDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 // ── config ───────────────────────────────────────────────────
 // Cloudflare Worker URL for R2 uploads/downloads
@@ -397,14 +457,20 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db   = getFirestore(app);
-
-// Sign in anonymously immediately so auth token is ready for uploads
 let authReady = signInAnonymously(auth);
 
 // ── state ────────────────────────────────────────────────────
-const MAX_BYTES = 50 * 1024 * 1024;
+const MB = 1024 * 1024;
+const MAX_BYTES = 50 * MB;
+const RETENTION_OPTIONS = [
+  { days: 7,  maxBytes: 50 * MB, label: '7 days · up to 50 MB' },
+  { days: 14, maxBytes: 25 * MB, label: '14 days · up to 25 MB' },
+  { days: 30, maxBytes: 10 * MB, label: '30 days · up to 10 MB' },
+];
+
 let pickedFile  = null;
 let parsedMods  = [];
+let packKind    = null; // "modrinth" or "curseforge"
 let dlPackData  = null; // { meta, slug }
 
 // ── routing ──────────────────────────────────────────────────
@@ -418,7 +484,6 @@ window.addEventListener('hashchange', () => {
   s ? openDownloadPage(s) : showPage('upload-page');
 });
 
-// ── DOM ready ────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   bindEvents();
   const s = getSlug();
@@ -427,10 +492,8 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function bindEvents() {
-  // logo
   document.getElementById('logo-btn').addEventListener('click', goHome);
 
-  // drop zone
   const dz = document.getElementById('drop-zone');
   const fi = document.getElementById('file-input');
   dz.addEventListener('click', () => fi.click());
@@ -442,14 +505,13 @@ function bindEvents() {
     if (e.dataTransfer.files[0]) pickFile(e.dataTransfer.files[0]);
   });
 
-  // upload card buttons
   document.getElementById('remove-btn').addEventListener('click', resetFile);
   document.getElementById('share-btn').addEventListener('click', doUpload);
   document.getElementById('copy-btn').addEventListener('click', copyLink);
   document.getElementById('reset-btn').addEventListener('click', resetAll);
+  document.getElementById('retention-select').addEventListener('change', updateRetentionNote);
 }
 
-// ── page switching ────────────────────────────────────────────
 function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById(id).classList.add('active');
@@ -461,43 +523,123 @@ function goHome() {
   resetAll();
 }
 
-// ── file pick & JSZip mod parsing ─────────────────────────────
+// ── file validation & modpack parsing ─────────────────────────
 async function pickFile(f) {
-  if (!f.name.toLowerCase().endsWith('.mrpack')) return showErr('Only .mrpack files are accepted.');
-  if (f.size > MAX_BYTES)          return showErr(`File too large (${fmtSize(f.size)}). Max is 50 MB.`);
+  hideErr();
+  const lower = f.name.toLowerCase();
+  if (!lower.endsWith('.mrpack') && !lower.endsWith('.zip')) {
+    return showErr('Only Modrinth .mrpack files or CurseForge .zip modpacks are accepted.');
+  }
+  if (f.size > MAX_BYTES) return showErr(`File too large (${fmtSize(f.size)}). Max is 50 MB.`);
 
   pickedFile = f;
   parsedMods = [];
+  packKind = null;
 
   try {
     const zip = await JSZip.loadAsync(f);
-    const idx = zip.file('modrinth.index.json');
-    if (idx) {
-      const json = JSON.parse(await idx.async('string'));
-      parsedMods = (json.files || [])
-        .filter(m => m.path && m.path.startsWith('mods/'))
-        .map(m => {
-          const raw  = m.path.replace(/^mods\//, '').replace(/\.jar(\.disabled)?$/, '');
-          const name = raw.replace(/[-_](\d[\w.\+-]*)$/, '').replace(/[-_]/g, ' ');
-          return { name: titleCase(name), raw };
-        })
-        .sort((a, b) => a.name.localeCompare(b.name));
+
+    if (lower.endsWith('.mrpack')) {
+      await parseModrinthPack(zip);
+      packKind = 'modrinth';
+    } else {
+      await parseCurseForgePack(zip);
+      packKind = 'curseforge';
     }
-  } catch (_) { /* non-fatal */ }
+  } catch (e) {
+    pickedFile = null;
+    parsedMods = [];
+    packKind = null;
+    return showErr(e.message || 'Could not read this modpack.');
+  }
 
   document.getElementById('fname-lbl').textContent = f.name;
   document.getElementById('fsize-lbl').textContent = fmtSize(f.size);
+  document.getElementById('ftype-lbl').innerHTML = `<span class="pack-type-pill">${packKind === 'curseforge' ? 'CurseForge ZIP' : 'Modrinth MRPACK'}</span>`;
   document.getElementById('drop-zone').style.display = 'none';
+  updateRetentionOptions();
   showEl('file-selected');
-  hideErr();
+}
+
+async function parseModrinthPack(zip) {
+  const idx = zip.file('modrinth.index.json');
+  if (!idx) throw new Error('That .mrpack is missing modrinth.index.json, so it does not look like a valid Modrinth pack.');
+
+  const json = JSON.parse(await idx.async('string'));
+  if (!json.formatVersion || !Array.isArray(json.files)) {
+    throw new Error('That .mrpack has an invalid modrinth.index.json.');
+  }
+
+  parsedMods = json.files
+    .filter(m => m.path && m.path.startsWith('mods/'))
+    .map(m => {
+      const raw  = m.path.replace(/^mods\//, '').replace(/\.jar(\.disabled)?$/, '');
+      const name = raw.replace(/[-_](\d[\w.\+-]*)$/, '').replace(/[-_]/g, ' ');
+      return { name: titleCase(name), raw };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function parseCurseForgePack(zip) {
+  const mf = zip.file('manifest.json');
+  if (!mf) throw new Error('That .zip is missing manifest.json, so it does not look like a CurseForge modpack export.');
+
+  const manifest = JSON.parse(await mf.async('string'));
+  const isCursePack = manifest.manifestType === 'minecraftModpack'
+    && manifest.minecraft
+    && Array.isArray(manifest.files);
+
+  if (!isCursePack) {
+    throw new Error('That .zip has a manifest.json, but it is not a valid CurseForge Minecraft modpack manifest.');
+  }
+
+  parsedMods = manifest.files
+    .filter(m => m.projectID && m.fileID)
+    .map(m => ({
+      name: `CurseForge project ${m.projectID}`,
+      raw: `${m.projectID}:${m.fileID}`,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function resetFile() {
-  pickedFile = null; parsedMods = [];
+  pickedFile = null; parsedMods = []; packKind = null;
   document.getElementById('file-input').value = '';
   document.getElementById('drop-zone').style.display = '';
+  document.getElementById('ftype-lbl').textContent = '';
   hideEl('file-selected');
   hideErr();
+}
+
+function updateRetentionOptions() {
+  const select = document.getElementById('retention-select');
+  let best = 7;
+  for (const opt of RETENTION_OPTIONS) {
+    const el = select.querySelector(`option[value="${opt.days}"]`);
+    const disabled = pickedFile && pickedFile.size > opt.maxBytes;
+    el.disabled = !!disabled;
+    el.textContent = disabled ? `${opt.label} · file too large` : opt.label;
+    if (!disabled) best = opt.days;
+  }
+
+  // Pick the longest allowed lifetime automatically.
+  select.value = String(best);
+  updateRetentionNote();
+}
+
+function getRetentionDays() {
+  const select = document.getElementById('retention-select');
+  const days = Number(select.value || 7);
+  const opt = RETENTION_OPTIONS.find(o => o.days === days) || RETENTION_OPTIONS[0];
+  if (pickedFile && pickedFile.size > opt.maxBytes) return 7;
+  return days;
+}
+
+function updateRetentionNote() {
+  const days = getRetentionDays();
+  const expires = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  document.getElementById('retention-note').textContent = `This link and file will be deleted after ${days} day${days === 1 ? '' : 's'}. Larger packs are limited to shorter lifetimes.`;
+  document.getElementById('expiry-hint').textContent = `Deletes automatically after ${days} day${days === 1 ? '' : 's'}.`;
 }
 
 // ── upload ────────────────────────────────────────────────────
@@ -510,22 +652,24 @@ async function doUpload() {
   setBar(5, 'Authenticating…');
 
   try {
-    // Ensure anonymous auth
     await authReady;
     const user = auth.currentUser;
     if (!user) throw new Error('Authentication failed. Please refresh and try again.');
 
+    const retentionDays = getRetentionDays();
+    const extension = pickedFile.name.toLowerCase().endsWith('.zip') ? 'zip' : 'mrpack';
+    const slug = randSlug();
+    const fileKey = `packs/${retentionDays}d/${slug}.${extension}`;
+    const expiresAtMs = Date.now() + retentionDays * 24 * 60 * 60 * 1000;
+
     setBar(15, 'Uploading file…');
 
-    const slug    = randSlug();
-    const fileKey = `packs/${slug}.mrpack`;
-
-    // POST multipart form to worker. fetch() does not expose true upload progress,
-    // so this keeps the UI moving while the browser sends the file.
     const form = new FormData();
-    form.append('file',    pickedFile, pickedFile.name);
-    form.append('slug',    slug);
+    form.append('file', pickedFile, pickedFile.name);
+    form.append('slug', slug);
     form.append('fileKey', fileKey);
+    form.append('retentionDays', String(retentionDays));
+    form.append('packKind', packKind || 'unknown');
 
     let fakePct = 15;
     const uploadTicker = setInterval(() => {
@@ -535,10 +679,7 @@ async function doUpload() {
 
     let res;
     try {
-      res = await fetch(`${WORKER_URL}/api/upload`, {
-        method: 'POST',
-        body: form,
-      });
+      res = await fetch(`${WORKER_URL}/api/upload`, { method: 'POST', body: form });
     } finally {
       clearInterval(uploadTicker);
     }
@@ -554,16 +695,23 @@ async function doUpload() {
       throw new Error(`Worker error ${res.status}: ${msg}`);
     }
 
+    const workerData = await res.json().catch(() => null);
+    if (!workerData || !workerData.fileKey) throw new Error('Worker did not return a fileKey.');
+
     setBar(80, 'Saving metadata…');
 
-    // Write metadata to Firestore
     const meta = {
       slug,
-      name:       pickedFile.name,
-      size:       pickedFile.size,
-      mods:       parsedMods,
+      name: pickedFile.name,
+      size: pickedFile.size,
+      mods: parsedMods,
       uploadedAt: Date.now(),
-      fileKey,
+      expiresAt: Timestamp.fromMillis(expiresAtMs),
+      expiresAtMs,
+      retentionDays,
+      packKind,
+      fileKey: workerData.fileKey,
+      extension,
     };
     await setDoc(doc(db, 'packs', slug), meta);
 
@@ -583,8 +731,8 @@ async function doUpload() {
 }
 
 function setBar(pct, lbl) {
-  document.getElementById('bar-fill').style.width  = pct + '%';
-  document.getElementById('prog-lbl').textContent  = lbl;
+  document.getElementById('bar-fill').style.width = pct + '%';
+  document.getElementById('prog-lbl').textContent = lbl;
 }
 
 function copyLink() {
@@ -597,9 +745,10 @@ function copyLink() {
 }
 
 function resetAll() {
-  pickedFile = null; parsedMods = [];
+  pickedFile = null; parsedMods = []; packKind = null;
   document.getElementById('file-input').value = '';
   document.getElementById('drop-zone').style.display = '';
+  document.getElementById('ftype-lbl').textContent = '';
   hideEl('file-selected'); hideEl('progress'); hideEl('success');
   hideErr();
 }
@@ -617,16 +766,13 @@ async function openDownloadPage(slug) {
     const meta = snap.data();
     dlPackData = { meta, slug };
     card.innerHTML = buildDLCard(meta);
-
-    // bind download button (injected into innerHTML so must use event delegation)
     card.querySelector('#dl-download-btn').addEventListener('click', () => triggerDownload());
     card.querySelector('#dl-back-btn').addEventListener('click', goHome);
-
   } catch (_) {
     card.innerHTML = `
       <div class="not-found">
         <h2>Pack not found</h2>
-        <p>This link may have expired or is invalid.</p>
+        <p>This link may have expired, been automatically deleted, or is invalid.</p>
         <button class="btn-ghost" id="nf-back-btn" style="margin-top:20px">← Back to home</button>
       </div>`;
     card.querySelector('#nf-back-btn').addEventListener('click', goHome);
@@ -643,6 +789,10 @@ function buildDLCard(meta) {
         </div>`).join('')
     : `<div class="no-modlist">No mod list available.</div>`;
 
+  const ext = meta.extension || (String(meta.name || '').toLowerCase().endsWith('.zip') ? 'zip' : 'mrpack');
+  const kind = meta.packKind === 'curseforge' ? 'CurseForge ZIP' : 'Modrinth MRPACK';
+  const expiresText = meta.expiresAtMs ? `expires ${timeUntil(meta.expiresAtMs)}` : `expires after ${meta.retentionDays || 7} days`;
+
   return `
     <div class="dl-header">
       <div class="dl-ficon">
@@ -653,14 +803,15 @@ function buildDLCard(meta) {
       </div>
       <div>
         <div class="dl-title">${esc(meta.name)}</div>
-        <div class="dl-sub">${fmtSize(meta.size)} &nbsp;·&nbsp; shared ${timeAgo(meta.uploadedAt)}</div>
+        <div class="dl-sub">${fmtSize(meta.size)} &nbsp;·&nbsp; ${esc(kind)} &nbsp;·&nbsp; shared ${timeAgo(meta.uploadedAt)}</div>
+        <div class="expiry-line">Auto-deletes ${esc(expiresText)}</div>
       </div>
     </div>
 
     ${mods.length ? `
     <div class="modlist-wrap">
       <div class="modlist-head">
-        <h3>Mods included</h3>
+        <h3>${meta.packKind === 'curseforge' ? 'CurseForge mods included' : 'Mods included'}</h3>
         <span class="mod-count">${mods.length}</span>
       </div>
       <div class="modlist">${modRows}</div>
@@ -670,7 +821,7 @@ function buildDLCard(meta) {
       <span class="dl-meta"><strong>${esc(meta.name)}</strong></span>
       <div style="display:flex;gap:10px;align-items:center">
         <button class="btn-ghost" id="dl-back-btn">← Back</button>
-        <button class="btn-primary" id="dl-download-btn">↓ Download .mrpack</button>
+        <button class="btn-primary" id="dl-download-btn">↓ Download .${esc(ext)}</button>
       </div>
     </div>
   `;
@@ -679,13 +830,10 @@ function buildDLCard(meta) {
 function triggerDownload() {
   if (!dlPackData) return;
   const { meta, slug } = dlPackData;
-  const url = `${WORKER_URL}/api/download/${slug}?name=${encodeURIComponent(meta.name)}`;
-
-  // Direct navigation lets the Worker handle the download headers and avoids
-  // requiring extra CORS permissions for reading the file body in JS.
+  const url = `${WORKER_URL}/api/download/${slug}?name=${encodeURIComponent(meta.name)}&fileKey=${encodeURIComponent(meta.fileKey || '')}`;
   const a = document.createElement('a');
   a.href = url;
-  a.download = meta.name || `${slug}.mrpack`;
+  a.download = meta.name || `${slug}.${meta.extension || 'mrpack'}`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -707,6 +855,12 @@ function timeAgo(ts) {
   if (s < 3600)  return Math.floor(s / 60)   + 'm ago';
   if (s < 86400) return Math.floor(s / 3600)  + 'h ago';
   return Math.floor(s / 86400) + 'd ago';
+}
+function timeUntil(ms) {
+  const diff = Math.max(0, Math.floor((ms - Date.now()) / 1000));
+  if (diff < 3600) return `in ${Math.max(1, Math.floor(diff / 60))}m`;
+  if (diff < 86400) return `in ${Math.floor(diff / 3600)}h`;
+  return `in ${Math.ceil(diff / 86400)}d`;
 }
 function titleCase(s) { return s.replace(/\b\w/g, c => c.toUpperCase()); }
 function esc(s) {

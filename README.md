@@ -96,3 +96,29 @@ Then open the local URL shown in your terminal.
 4. Confirm it creates a Firestore document under `packs/{slug}`.
 5. Open the generated share link in an incognito window.
 6. Click download and confirm the `.mrpack` downloads.
+
+
+## Retention / auto-delete setup
+
+This version supports three link lifetimes:
+
+- 7 days: files up to 50 MB
+- 14 days: files up to 25 MB
+- 30 days: files up to 10 MB
+
+To make those lifetimes actually work in Cloudflare R2, do **not** use one catch-all `packs/` delete rule at 7 days. Use separate lifecycle rules by prefix:
+
+- Prefix `packs/7d/` → delete after 7 days
+- Prefix `packs/14d/` → delete after 14 days
+- Prefix `packs/30d/` → delete after 30 days
+
+For Firestore metadata cleanup, add a TTL policy:
+
+- Collection group: `packs`
+- TTL field: `expiresAt`
+
+## CurseForge zip support
+
+The frontend accepts `.zip` files only when the zip contains a root `manifest.json` with `manifestType: "minecraftModpack"`, a `minecraft` object, and a `files` array. Random zip files are rejected before upload.
+
+After updating the frontend, also update the Cloudflare Worker using `docs/cloudflare-worker.js`, because the Worker must allow `.zip` files and the new retention folders.
