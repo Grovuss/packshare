@@ -35,9 +35,34 @@
     border-bottom: 1px solid var(--border);
   }
   .logo {
-    font-family: 'Space Mono', monospace; font-size: 1rem; font-weight: 700;
-    color: var(--green); letter-spacing: -0.02em; text-decoration: none; cursor: pointer;
-  }
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'Space Mono', monospace;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--green);
+  letter-spacing: -0.02em;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.logo-img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  display: block;
+}
+
+.logo-text {
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.logo span span {
+  color: var(--muted);
+  font-weight: 400;
+}
   .logo span { color: var(--muted); font-weight: 400; }
   .badge {
     font-family: 'Space Mono', monospace; font-size: 0.62rem; color: var(--muted);
