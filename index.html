@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>packshare.site — share your modpack</title>
+<link rel="icon" type="image/png" href="/packsharelogo.png">
+<link rel="apple-touch-icon" href="/packsharelogo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -35,35 +37,15 @@
     border-bottom: 1px solid var(--border);
   }
   .logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-family: 'Space Mono', monospace;
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--green);
-  letter-spacing: -0.02em;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.logo-img {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
-  display: block;
-}
-
-.logo-text {
-  display: inline-flex;
-  align-items: baseline;
-}
-
-.logo span span {
-  color: var(--muted);
-  font-weight: 400;
-}
-  .logo span { color: var(--muted); font-weight: 400; }
+    display: inline-flex; align-items: center; gap: 10px;
+    font-family: 'Space Mono', monospace; font-size: 1rem; font-weight: 700;
+    color: var(--green); letter-spacing: -0.02em; text-decoration: none; cursor: pointer;
+    user-select: none;
+  }
+  .logo-mark {
+    width: 32px; height: 32px; object-fit: contain; display: block;
+  }
+  .logo-word span { color: var(--muted); font-weight: 400; }
   .badge {
     font-family: 'Space Mono', monospace; font-size: 0.62rem; color: var(--muted);
     border: 1px solid var(--border-hi); padding: 3px 10px; border-radius: 99px;
@@ -394,10 +376,7 @@
 <div class="shell">
 
   <header>
-    <div class="logo" id="logo-btn">
-     <img src="/packsharelogo.png" alt="Packshare logo" class="logo-img">
-      <span class="logo-text">packshare<span>.site</span></span>
-    </div>
+    <div class="logo" id="logo-btn" aria-label="packshare home"><img class="logo-mark" src="/packsharelogo.png" alt=""><span class="logo-word">packshare<span>.site</span></span></div>
     <span class="badge">.mrpack / .zip</span>
   </header>
 
