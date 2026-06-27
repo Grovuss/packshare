@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>packshare.site — share your modpack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0D0F0E;
+    --surface:   #161918;
+    --border:    #232624;
+    --border-hi: #363A37;
+    --green:     #4ADE80;
+    --green-dim: #162B1E;
+    --green-glow:rgba(74,222,128,0.12);
+    --text:      #E6EAE6;
+    --muted:     #677066;
+    --danger:    #F87171;
+  }
+
+  html, body { height: 100%; background: var(--bg); color: var(--text);
+    font-family: 'Space Grotesk', sans-serif; font-size: 16px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased; }
+
+  .shell { min-height: 100vh; display: flex; flex-direction: column; }
+
+  header {
+    padding: 24px 36px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo {
+    font-family: 'Space Mono', monospace; font-size: 1rem; font-weight: 700;
+    color: var(--green); letter-spacing: -0.02em; text-decoration: none; cursor: pointer;
+  }
+  .logo span { color: var(--muted); font-weight: 400; }
+  .badge {
+    font-family: 'Space Mono', monospace; font-size: 0.62rem; color: var(--muted);
+    border: 1px solid var(--border-hi); padding: 3px 10px; border-radius: 99px;
+    letter-spacing: 0.07em;
+  }
+
+  /* ── pages ── */
+  .page { display: none; flex: 1; flex-direction: column; align-items: center;
+    justify-content: center; padding: 64px 24px; }
+  .page.active { display: flex; }
+
+  /* ── upload page ── */
+  .hero { text-align: center; margin-bottom: 44px; }
+  .hero h1 { font-size: clamp(1.8rem, 5vw, 3rem); font-weight: 700;
+    letter-spacing: -0.04em; line-height: 1.1; margin-bottom: 12px; }
+  .hero h1 em { font-style: normal; color: var(--green); }
+  .hero p { color: var(--muted); font-size: 0.95rem; max-width: 380px; margin: 0 auto; }
+
+  .card {
+    width: 100%; max-width: 520px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    overflow: hidden;
+  }
+
+  /* drop zone */
+  #drop-zone {
+    padding: 60px 40px; display: flex; flex-direction: column;
+    align-items: center; gap: 18px; cursor: pointer;
+    transition: background 0.15s;
+  }
+  #drop-zone:hover, #drop-zone.over { background: var(--green-glow); }
+  #drop-zone.over { outline: 2px dashed var(--green); outline-offset: -2px; }
+
+  .drop-icon {
+    width: 60px; height: 60px; border: 1.5px solid var(--border-hi);
+    border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    background: var(--bg); transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  #drop-zone:hover .drop-icon, #drop-zone.over .drop-icon {
+    border-color: var(--green); box-shadow: 0 0 18px var(--green-glow);
+  }
+  .drop-icon svg { width: 26px; height: 26px; }
+
+  .drop-text { text-align: center; }
+  .drop-text strong { display: block; font-size: 1rem; font-weight: 600; margin-bottom: 4px; }
+  .drop-text small { color: var(--muted); font-size: 0.82rem; }
+  .drop-text .ext { font-family: 'Space Mono', monospace; color: var(--green); }
+
+  #file-input { display: none; }
+
+  /* file selected state */
+  #file-selected { display: none; }
+  #file-selected.show { display: block; }
+
+  .file-row {
+    padding: 18px 24px; display: flex; align-items: center; gap: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .file-row .ficon {
+    width: 36px; height: 36px; background: var(--green-dim); border-radius: 8px;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .file-row .ficon svg { width: 16px; height: 16px; color: var(--green); }
+  .finfo { flex: 1; min-width: 0; }
+  .fname { font-family: 'Space Mono', monospace; font-size: 0.78rem; font-weight: 700;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fsize { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+  .rm-btn {
+    background: none; border: 1px solid var(--border-hi); color: var(--muted);
+    padding: 4px 12px; border-radius: 6px; font-size: 0.72rem; cursor: pointer;
+    font-family: 'Space Grotesk', sans-serif; transition: color 0.1s, border-color 0.1s;
+  }
+  .rm-btn:hover { color: var(--danger); border-color: var(--danger); }
+
+  .card-footer {
+    padding: 18px 24px; display: flex; align-items: center;
+    justify-content: space-between; gap: 12px;
+  }
+  .card-footer .hint { font-size: 0.75rem; color: var(--muted); }
+
+  .btn-primary {
+    background: var(--green); color: #0D0F0E; border: none; border-radius: 8px;
+    padding: 10px 22px; font-family: 'Space Grotesk', sans-serif; font-size: 0.88rem;
+    font-weight: 700; cursor: pointer; white-space: nowrap;
+    transition: opacity 0.15s, box-shadow 0.15s;
+  }
+  .btn-primary:hover { opacity: 0.88; box-shadow: 0 0 18px rgba(74,222,128,0.3); }
+  .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
+
+  /* error */
+  .err {
+    display: none; margin: 0 24px 16px;
+    padding: 10px 14px; background: rgba(248,113,113,0.08);
+    border: 1px solid rgba(248,113,113,0.28); border-radius: 8px;
+    color: var(--danger); font-size: 0.8rem;
+  }
+  .err.show { display: block; }
+
+  /* progress */
+  #progress { display: none; padding: 32px 28px; flex-direction: column;
+    align-items: center; gap: 14px; text-align: center; }
+  #progress.show { display: flex; }
+  .bar-track { width: 260px; height: 3px; background: var(--border); border-radius: 99px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--green); border-radius: 99px;
+    width: 0%; transition: width 0.25s ease; box-shadow: 0 0 6px var(--green); }
+  .prog-lbl { font-family: 'Space Mono', monospace; font-size: 0.75rem; color: var(--muted); }
+
+  /* success */
+  #success { display: none; }
+  #success.show { display: block; }
+
+  .success-top {
+    padding: 28px 28px 20px; text-align: center; border-bottom: 1px solid var(--border);
+  }
+  .check-circle {
+    width: 48px; height: 48px; background: var(--green-dim); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; margin: 0 auto 14px;
+    animation: pop 0.4s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes pop { from{transform:scale(.4);opacity:0} to{transform:scale(1);opacity:1} }
+  .check-circle svg { width: 22px; height: 22px; color: var(--green); }
+  .success-top h2 { font-size: 1.05rem; font-weight: 700; margin-bottom: 4px; }
+  .success-top p { font-size: 0.82rem; color: var(--muted); }
+
+  .link-block { padding: 20px 24px; border-bottom: 1px solid var(--border); }
+  .link-lbl { font-size: 0.68rem; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 8px; }
+  .link-row {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--bg); border: 1px solid var(--border-hi);
+    border-radius: 8px; padding: 4px 4px 4px 14px;
+  }
+  .link-row .url { flex: 1; font-family: 'Space Mono', monospace; font-size: 0.76rem;
+    color: var(--green); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .copy-btn {
+    background: var(--surface); border: 1px solid var(--border-hi); color: var(--text);
+    border-radius: 6px; padding: 7px 14px; font-size: 0.78rem; font-weight: 600;
+    cursor: pointer; font-family: 'Space Grotesk', sans-serif;
+    transition: background 0.1s; white-space: nowrap; flex-shrink: 0;
+  }
+  .copy-btn:hover { background: var(--border); }
+  .copy-btn.done { color: var(--green); border-color: var(--green); }
+
+  .success-footer { padding: 16px 24px; display: flex; justify-content: flex-end; }
+  .btn-ghost {
+    background: none; border: 1px solid var(--border-hi); color: var(--muted);
+    border-radius: 8px; padding: 9px 18px; font-size: 0.82rem; font-weight: 600;
+    cursor: pointer; font-family: 'Space Grotesk', sans-serif;
+    transition: color 0.1s, border-color 0.1s;
+  }
+  .btn-ghost:hover { color: var(--text); border-color: var(--text); }
+
+  /* ── download page ── */
+  #dl-page { gap: 0; justify-content: flex-start; padding-top: 48px; }
+
+  .dl-card {
+    width: 100%; max-width: 640px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    overflow: hidden;
+  }
+
+  .dl-header {
+    padding: 28px 28px 20px; display: flex; align-items: center; gap: 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .dl-ficon {
+    width: 52px; height: 52px; background: var(--green-dim); border-radius: 12px;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .dl-ficon svg { width: 24px; height: 24px; color: var(--green); }
+  .dl-title { font-size: 1.2rem; font-weight: 700; margin-bottom: 4px; }
+  .dl-sub { font-size: 0.82rem; color: var(--muted); font-family: 'Space Mono', monospace; }
+
+  /* mod list */
+  .modlist-wrap { padding: 20px 24px; border-bottom: 1px solid var(--border); }
+  .modlist-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .modlist-head h3 { font-size: 0.78rem; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.07em; }
+  .mod-count {
+    font-family: 'Space Mono', monospace; font-size: 0.72rem;
+    color: var(--green); background: var(--green-dim);
+    padding: 2px 9px; border-radius: 99px;
+  }
+
+  .modlist {
+    display: grid; gap: 6px;
+    max-height: 340px; overflow-y: auto;
+    scrollbar-width: thin; scrollbar-color: var(--border-hi) transparent;
+  }
+  .modlist::-webkit-scrollbar { width: 5px; }
+  .modlist::-webkit-scrollbar-track { background: transparent; }
+  .modlist::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 99px; }
+
+  .mod-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 12px; border-radius: 8px; background: var(--bg);
+    border: 1px solid var(--border);
+  }
+  .mod-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green);
+    box-shadow: 0 0 5px var(--green); flex-shrink: 0; }
+  .mod-name { font-size: 0.85rem; font-weight: 500; flex: 1; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .no-modlist { font-size: 0.82rem; color: var(--muted);
+    font-family: 'Space Mono', monospace; padding: 16px 0; }
+
+  .dl-footer {
+    padding: 20px 24px; display: flex; align-items: center;
+    justify-content: space-between; gap: 12px;
+  }
+  .dl-meta { font-size: 0.75rem; color: var(--muted); }
+  .dl-meta strong { color: var(--text); }
+
+  /* not found */
+  .not-found { text-align: center; padding: 48px 24px; }
+  .not-found h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 8px; }
+  .not-found p { font-size: 0.85rem; color: var(--muted); }
+
+  footer {
+    padding: 20px 36px; border-top: 1px solid var(--border);
+    display: flex; justify-content: center; gap: 20px;
+  }
+  footer span { font-size: 0.72rem; color: var(--muted); font-family: 'Space Mono', monospace; }
+
+  @media (max-width: 540px) {
+    header { padding: 18px 20px; }
+    .page { padding: 40px 16px; }
+    #drop-zone { padding: 44px 24px; }
+    .card-footer, .file-row, .link-block, .success-top,
+    .modlist-wrap, .dl-header, .dl-footer, .success-footer { padding-left: 18px; padding-right: 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header>
+    <div class="logo" id="logo-btn">packshare<span>.site</span></div>
+    <span class="badge">.mrpack</span>
+  </header>
+
+  <!-- ░░ UPLOAD PAGE ░░ -->
+  <div class="page active" id="upload-page">
+    <div class="hero">
+      <h1>Drop your pack.<br><em>Share a link.</em></h1>
+      <p>Upload an <span style="font-family:'Space Mono',monospace;color:var(--green)">.mrpack</span> file and get a shareable link instantly.</p>
+    </div>
+
+    <div class="card">
+
+      <!-- drop zone -->
+      <div id="drop-zone">
+        <div class="drop-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="1.8">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <div class="drop-text">
+          <strong>Drag &amp; drop your modpack here</strong>
+          <small>or click to browse &nbsp;·&nbsp; <span class="ext">.mrpack</span> only &nbsp;·&nbsp; max 50 MB</small>
+        </div>
+        <input type="file" id="file-input" accept=".mrpack">
+      </div>
+
+      <!-- file selected -->
+      <div id="file-selected">
+        <div class="file-row">
+          <div class="ficon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+            </svg>
+          </div>
+          <div class="finfo">
+            <div class="fname" id="fname-lbl"></div>
+            <div class="fsize" id="fsize-lbl"></div>
+          </div>
+          <button class="rm-btn" id="remove-btn">Remove</button>
+        </div>
+        <div class="err" id="err-msg"></div>
+        <div class="card-footer">
+          <span class="hint">No account needed.</span>
+          <button class="btn-primary" id="share-btn">Share Pack →</button>
+        </div>
+      </div>
+
+      <!-- progress -->
+      <div id="progress">
+        <div class="bar-track"><div class="bar-fill" id="bar-fill"></div></div>
+        <span class="prog-lbl" id="prog-lbl">Uploading…</span>
+      </div>
+
+      <!-- success -->
+      <div id="success">
+        <div class="success-top">
+          <div class="check-circle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+          <h2>Pack shared!</h2>
+          <p>Anyone with this link can view and download your modpack.</p>
+        </div>
+        <div class="link-block">
+          <div class="link-lbl">Share link</div>
+          <div class="link-row">
+            <span class="url" id="share-url-display"></span>
+            <button class="copy-btn" id="copy-btn">Copy</button>
+          </div>
+        </div>
+        <div class="success-footer">
+          <button class="btn-ghost" id="reset-btn">Share another</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ░░ DOWNLOAD PAGE ░░ -->
+  <div class="page" id="dl-page">
+    <div class="dl-card" id="dl-card">
+      <div style="padding:48px;text-align:center;color:var(--muted);font-family:'Space Mono',monospace;font-size:.8rem;">Loading pack…</div>
+    </div>
+  </div>
+
+</div><!-- /.shell -->
+
+<footer>
+  <span>packshare.site</span>
+  <span>·</span>
+  <span>no account needed</span>
+</footer>
+
+<script type="module">
+import { initializeApp }                        from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import { getAuth, signInAnonymously }           from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getFirestore, doc, setDoc, getDoc }   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+// ── config ───────────────────────────────────────────────────
+// Cloudflare Worker URL for R2 uploads/downloads
+const WORKER_URL = 'https://packshare-api.grovuss.workers.dev';
+
+const firebaseConfig = {
+  apiKey:            'AIzaSyDcHMSKtQFjT5Mothkkt66wHKYeQjJhn_E',
+  authDomain:        'packshare-e4e0b.firebaseapp.com',
+  projectId:         'packshare-e4e0b',
+  storageBucket:     'packshare-e4e0b.firebasestorage.app',
+  messagingSenderId: '935938141584',
+  appId:             '1:935938141584:web:c423273ae0ca0540a49715',
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+
+// Sign in anonymously immediately so auth token is ready for uploads
+let authReady = signInAnonymously(auth).catch(() => {});
+
+// ── state ────────────────────────────────────────────────────
+const MAX_BYTES = 50 * 1024 * 1024;
+let pickedFile  = null;
+let parsedMods  = [];
+let dlPackData  = null; // { meta, slug }
+
+// ── routing ──────────────────────────────────────────────────
+function getSlug() {
+  const h = location.hash;
+  return h.startsWith('#/p/') ? h.slice(4) : null;
+}
+
+window.addEventListener('hashchange', () => {
+  const s = getSlug();
+  s ? openDownloadPage(s) : showPage('upload-page');
+});
+
+// ── DOM ready ────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  bindEvents();
+  const s = getSlug();
+  if (s) openDownloadPage(s);
+  else showPage('upload-page');
+});
+
+function bindEvents() {
+  // logo
+  document.getElementById('logo-btn').addEventListener('click', goHome);
+
+  // drop zone
+  const dz = document.getElementById('drop-zone');
+  const fi = document.getElementById('file-input');
+  dz.addEventListener('click', () => fi.click());
+  fi.addEventListener('change', e => e.target.files[0] && pickFile(e.target.files[0]));
+  dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('over'); });
+  dz.addEventListener('dragleave', ()  => dz.classList.remove('over'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('over');
+    if (e.dataTransfer.files[0]) pickFile(e.dataTransfer.files[0]);
+  });
+
+  // upload card buttons
+  document.getElementById('remove-btn').addEventListener('click', resetFile);
+  document.getElementById('share-btn').addEventListener('click', doUpload);
+  document.getElementById('copy-btn').addEventListener('click', copyLink);
+  document.getElementById('reset-btn').addEventListener('click', resetAll);
+}
+
+// ── page switching ────────────────────────────────────────────
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function goHome() {
+  location.hash = '';
+  showPage('upload-page');
+  resetAll();
+}
+
+// ── file pick & JSZip mod parsing ─────────────────────────────
+async function pickFile(f) {
+  if (!f.name.toLowerCase().endsWith('.mrpack')) return showErr('Only .mrpack files are accepted.');
+  if (f.size > MAX_BYTES)          return showErr(`File too large (${fmtSize(f.size)}). Max is 50 MB.`);
+
+  pickedFile = f;
+  parsedMods = [];
+
+  try {
+    const zip = await JSZip.loadAsync(f);
+    const idx = zip.file('modrinth.index.json');
+    if (idx) {
+      const json = JSON.parse(await idx.async('string'));
+      parsedMods = (json.files || [])
+        .filter(m => m.path && m.path.startsWith('mods/'))
+        .map(m => {
+          const raw  = m.path.replace(/^mods\//, '').replace(/\.jar(\.disabled)?$/, '');
+          const name = raw.replace(/[-_](\d[\w.\+-]*)$/, '').replace(/[-_]/g, ' ');
+          return { name: titleCase(name), raw };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name));
+    }
+  } catch (_) { /* non-fatal */ }
+
+  document.getElementById('fname-lbl').textContent = f.name;
+  document.getElementById('fsize-lbl').textContent = fmtSize(f.size);
+  document.getElementById('drop-zone').style.display = 'none';
+  showEl('file-selected');
+  hideErr();
+}
+
+function resetFile() {
+  pickedFile = null; parsedMods = [];
+  document.getElementById('file-input').value = '';
+  document.getElementById('drop-zone').style.display = '';
+  hideEl('file-selected');
+  hideErr();
+}
+
+// ── upload ────────────────────────────────────────────────────
+async function doUpload() {
+  if (!pickedFile) return;
+
+  hideEl('file-selected');
+  document.getElementById('drop-zone').style.display = 'none';
+  showEl('progress');
+  setBar(5, 'Authenticating…');
+
+  try {
+    // Ensure anonymous auth
+    await authReady;
+    const user = auth.currentUser;
+    if (!user) throw new Error('Authentication failed. Please refresh and try again.');
+
+    setBar(15, 'Uploading file…');
+
+    const slug    = randSlug();
+    const fileKey = `packs/${slug}.mrpack`;
+
+    // POST multipart form to worker
+    const form = new FormData();
+    form.append('file',    pickedFile, pickedFile.name);
+    form.append('slug',    slug);
+    form.append('fileKey', fileKey);
+
+    const res = await fetch(`${WORKER_URL}/api/upload`, {
+      method: 'POST',
+      body: form,
+    });
+
+    if (!res.ok) {
+      let msg = res.statusText;
+      try {
+        const data = await res.json();
+        msg = data.error || JSON.stringify(data);
+      } catch (_) {
+        msg = await res.text().catch(() => res.statusText);
+      }
+      throw new Error(`Worker error ${res.status}: ${msg}`);
+    }
+
+    setBar(80, 'Saving metadata…');
+
+    // Write metadata to Firestore
+    const meta = {
+      slug,
+      name:       pickedFile.name,
+      size:       pickedFile.size,
+      mods:       parsedMods,
+      uploadedAt: Date.now(),
+      fileKey,
+    };
+    await setDoc(doc(db, 'packs', slug), meta);
+
+    setBar(100, 'Done!');
+    await wait(300);
+
+    hideEl('progress');
+    const shareUrl = `${location.origin}${location.pathname}#/p/${slug}`;
+    document.getElementById('share-url-display').textContent = shareUrl;
+    showEl('success');
+
+  } catch (e) {
+    hideEl('progress');
+    showEl('file-selected');
+    showErr('Upload failed: ' + e.message);
+  }
+}
+
+function setBar(pct, lbl) {
+  document.getElementById('bar-fill').style.width  = pct + '%';
+  document.getElementById('prog-lbl').textContent  = lbl;
+}
+
+function copyLink() {
+  const url = document.getElementById('share-url-display').textContent;
+  navigator.clipboard.writeText(url).then(() => {
+    const b = document.getElementById('copy-btn');
+    b.textContent = 'Copied!'; b.classList.add('done');
+    setTimeout(() => { b.textContent = 'Copy'; b.classList.remove('done'); }, 2000);
+  });
+}
+
+function resetAll() {
+  pickedFile = null; parsedMods = [];
+  document.getElementById('file-input').value = '';
+  document.getElementById('drop-zone').style.display = '';
+  hideEl('file-selected'); hideEl('progress'); hideEl('success');
+  hideErr();
+}
+
+// ── download page ─────────────────────────────────────────────
+async function openDownloadPage(slug) {
+  showPage('dl-page');
+  dlPackData = null;
+  const card = document.getElementById('dl-card');
+  card.innerHTML = `<div style="padding:48px;text-align:center;color:var(--muted);font-family:'Space Mono',monospace;font-size:.8rem;">Loading pack…</div>`;
+
+  try {
+    const snap = await getDoc(doc(db, 'packs', slug));
+    if (!snap.exists()) throw new Error('not found');
+    const meta = snap.data();
+    dlPackData = { meta, slug };
+    card.innerHTML = buildDLCard(meta);
+
+    // bind download button (injected into innerHTML so must use event delegation)
+    card.querySelector('#dl-download-btn').addEventListener('click', () => triggerDownload());
+    card.querySelector('#dl-back-btn').addEventListener('click', goHome);
+
+  } catch (_) {
+    card.innerHTML = `
+      <div class="not-found">
+        <h2>Pack not found</h2>
+        <p>This link may have expired or is invalid.</p>
+        <button class="btn-ghost" id="nf-back-btn" style="margin-top:20px">← Back to home</button>
+      </div>`;
+    card.querySelector('#nf-back-btn').addEventListener('click', goHome);
+  }
+}
+
+function buildDLCard(meta) {
+  const mods = meta.mods || [];
+  const modRows = mods.length
+    ? mods.map(m => `
+        <div class="mod-item">
+          <div class="mod-dot"></div>
+          <span class="mod-name">${esc(m.name || m.raw)}</span>
+        </div>`).join('')
+    : `<div class="no-modlist">No mod list available.</div>`;
+
+  return `
+    <div class="dl-header">
+      <div class="dl-ficon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+        </svg>
+      </div>
+      <div>
+        <div class="dl-title">${esc(meta.name)}</div>
+        <div class="dl-sub">${fmtSize(meta.size)} &nbsp;·&nbsp; shared ${timeAgo(meta.uploadedAt)}</div>
+      </div>
+    </div>
+
+    ${mods.length ? `
+    <div class="modlist-wrap">
+      <div class="modlist-head">
+        <h3>Mods included</h3>
+        <span class="mod-count">${mods.length}</span>
+      </div>
+      <div class="modlist">${modRows}</div>
+    </div>` : ''}
+
+    <div class="dl-footer">
+      <span class="dl-meta"><strong>${esc(meta.name)}</strong></span>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button class="btn-ghost" id="dl-back-btn">← Back</button>
+        <button class="btn-primary" id="dl-download-btn">↓ Download .mrpack</button>
+      </div>
+    </div>
+  `;
+}
+
+function triggerDownload() {
+  if (!dlPackData) return;
+  const { meta, slug } = dlPackData;
+  const url = `${WORKER_URL}/api/download/${slug}?name=${encodeURIComponent(meta.name)}`;
+
+  // Direct navigation lets the Worker handle the download headers and avoids
+  // requiring extra CORS permissions for reading the file body in JS.
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = meta.name || `${slug}.mrpack`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+// ── utils ────────────────────────────────────────────────────
+function randSlug() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(5)))
+    .map(b => b.toString(36).padStart(2, '0')).join('').slice(0, 8);
+}
+function fmtSize(b) {
+  if (b < 1024)        return b + ' B';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+  return (b / 1024 / 1024).toFixed(1) + ' MB';
+}
+function timeAgo(ts) {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60)    return 'just now';
+  if (s < 3600)  return Math.floor(s / 60)   + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600)  + 'h ago';
+  return Math.floor(s / 86400) + 'd ago';
+}
+function titleCase(s) { return s.replace(/\b\w/g, c => c.toUpperCase()); }
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function showEl(id) { const e = document.getElementById(id); if (e) e.style.display = ''; }
+function hideEl(id) { const e = document.getElementById(id); if (e) e.style.display = 'none'; }
+function showErr(m) {
+  const e = document.getElementById('err-msg'); e.textContent = m; e.classList.add('show');
+}
+function hideErr() { document.getElementById('err-msg').classList.remove('show'); }
+function wait(ms)  { return new Promise(r => setTimeout(r, ms)); }
+</script>
+</body>
+</html>
