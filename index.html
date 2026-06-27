@@ -399,7 +399,7 @@ const auth = getAuth(app);
 const db   = getFirestore(app);
 
 // Sign in anonymously immediately so auth token is ready for uploads
-let authReady = signInAnonymously(auth).catch(() => {});
+let authReady = signInAnonymously(auth);
 
 // ── state ────────────────────────────────────────────────────
 const MAX_BYTES = 50 * 1024 * 1024;
@@ -520,16 +520,28 @@ async function doUpload() {
     const slug    = randSlug();
     const fileKey = `packs/${slug}.mrpack`;
 
-    // POST multipart form to worker
+    // POST multipart form to worker. fetch() does not expose true upload progress,
+    // so this keeps the UI moving while the browser sends the file.
     const form = new FormData();
     form.append('file',    pickedFile, pickedFile.name);
     form.append('slug',    slug);
     form.append('fileKey', fileKey);
 
-    const res = await fetch(`${WORKER_URL}/api/upload`, {
-      method: 'POST',
-      body: form,
-    });
+    let fakePct = 15;
+    const uploadTicker = setInterval(() => {
+      fakePct = Math.min(fakePct + 3, 72);
+      setBar(fakePct, 'Uploading file…');
+    }, 600);
+
+    let res;
+    try {
+      res = await fetch(`${WORKER_URL}/api/upload`, {
+        method: 'POST',
+        body: form,
+      });
+    } finally {
+      clearInterval(uploadTicker);
+    }
 
     if (!res.ok) {
       let msg = res.statusText;
@@ -700,8 +712,18 @@ function titleCase(s) { return s.replace(/\b\w/g, c => c.toUpperCase()); }
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
-function showEl(id) { const e = document.getElementById(id); if (e) e.style.display = ''; }
-function hideEl(id) { const e = document.getElementById(id); if (e) e.style.display = 'none'; }
+function showEl(id) {
+  const e = document.getElementById(id);
+  if (!e) return;
+  e.classList.add('show');
+  e.style.display = '';
+}
+function hideEl(id) {
+  const e = document.getElementById(id);
+  if (!e) return;
+  e.classList.remove('show');
+  e.style.display = 'none';
+}
 function showErr(m) {
   const e = document.getElementById('err-msg'); e.textContent = m; e.classList.add('show');
 }
