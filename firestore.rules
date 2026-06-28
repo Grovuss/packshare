@@ -6,12 +6,69 @@ service cloud.firestore {
       allow read: if true;
 
       allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly([
+          "slug",
+          "name",
+          "size",
+          "mods",
+          "uploadedAt",
+          "expiresAt",
+          "expiresAtMs",
+          "retentionDays",
+          "packKind",
+          "fileKey",
+          "extension"
+        ])
         && request.resource.data.slug == slug
         && request.resource.data.name is string
         && request.resource.data.size is number
-        && request.resource.data.size <= 50 * 1024 * 1024
+        && request.resource.data.size > 0
+        && request.resource.data.size <= 52428800
+        && request.resource.data.mods is list
         && request.resource.data.uploadedAt is number
-        && request.resource.data.fileKey == "packs/" + slug + ".mrpack";
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAtMs is number
+        && request.resource.data.retentionDays in [7, 14, 30]
+        && request.resource.data.packKind in ["modrinth", "curseforge"]
+        && request.resource.data.extension in ["mrpack", "zip"]
+        && request.resource.data.fileKey is string
+        && (
+          (
+            request.resource.data.retentionDays == 7
+            && request.resource.data.extension == "mrpack"
+            && request.resource.data.fileKey == "packs/7d/" + slug + ".mrpack"
+          )
+          ||
+          (
+            request.resource.data.retentionDays == 7
+            && request.resource.data.extension == "zip"
+            && request.resource.data.fileKey == "packs/7d/" + slug + ".zip"
+          )
+          ||
+          (
+            request.resource.data.retentionDays == 14
+            && request.resource.data.extension == "mrpack"
+            && request.resource.data.fileKey == "packs/14d/" + slug + ".mrpack"
+          )
+          ||
+          (
+            request.resource.data.retentionDays == 14
+            && request.resource.data.extension == "zip"
+            && request.resource.data.fileKey == "packs/14d/" + slug + ".zip"
+          )
+          ||
+          (
+            request.resource.data.retentionDays == 30
+            && request.resource.data.extension == "mrpack"
+            && request.resource.data.fileKey == "packs/30d/" + slug + ".mrpack"
+          )
+          ||
+          (
+            request.resource.data.retentionDays == 30
+            && request.resource.data.extension == "zip"
+            && request.resource.data.fileKey == "packs/30d/" + slug + ".zip"
+          )
+        );
 
       allow update, delete: if false;
     }

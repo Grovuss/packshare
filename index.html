@@ -976,8 +976,6 @@ function bindDownloadCardEvents(card) {
   }
 }
 
-function buildDLCard
-
 function buildDLCard(meta) {
   const allMods = Array.isArray(meta.mods) ? meta.mods : [];
   const mods = getVisibleMods(allMods);
@@ -1101,8 +1099,6 @@ function hasModrinthPage(mod) {
     return false;
   }
 }
-
-async function resolveModPages
 
 async function resolveModPages(kind, mods) {
   if (!Array.isArray(mods) || mods.length === 0) return [];
