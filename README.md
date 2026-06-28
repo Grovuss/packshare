@@ -31,3 +31,8 @@ Without `CURSEFORGE_API_KEY`, CurseForge ZIPs still upload and download, but the
 ## Vercel deployment
 
 Import this repo into Vercel as a static project. No build command is needed.
+
+
+## Safety UI update
+
+This version adds an unverified-upload warning to download pages, a required browser confirmation before downloading, Modrinth-page match indicators per mod, and modlist search/sort controls.

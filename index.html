@@ -183,6 +183,89 @@
     font-size: 0.78rem;
   }
   .cf-note strong { color: var(--text); }
+
+  .security-warning {
+    margin: 0 24px 16px;
+    padding: 13px 14px;
+    background: rgba(248,113,113,0.085);
+    border: 1px solid rgba(248,113,113,0.34);
+    border-radius: 10px;
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+  .security-warning strong { color: var(--danger); }
+  .security-warning small {
+    display: block;
+    margin-top: 5px;
+    color: var(--muted);
+    line-height: 1.45;
+  }
+
+  .safety-summary {
+    margin: 0 24px 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .safety-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 9px;
+    border-radius: 99px;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.66rem;
+    border: 1px solid var(--border-hi);
+    background: var(--bg);
+    color: var(--muted);
+  }
+  .safety-pill.good { color: var(--green); border-color: rgba(74,222,128,0.35); background: rgba(74,222,128,0.075); }
+  .safety-pill.bad { color: var(--danger); border-color: rgba(248,113,113,0.35); background: rgba(248,113,113,0.075); }
+
+  .safety-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.7rem;
+    font-weight: 700;
+    border: 1px solid var(--border-hi);
+  }
+  .safety-icon.verified {
+    color: var(--green);
+    background: var(--green-dim);
+    border-color: rgba(74,222,128,0.42);
+  }
+  .safety-icon.unverified {
+    color: var(--danger);
+    background: rgba(248,113,113,0.08);
+    border-color: rgba(248,113,113,0.42);
+  }
+
+  .modlist-tools {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .mod-search,
+  .mod-sort {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border-hi);
+    border-radius: 8px;
+    padding: 9px 10px;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.8rem;
+    outline: none;
+  }
+  .mod-search { flex: 1; min-width: 0; }
+  .mod-sort { width: 170px; flex-shrink: 0; }
+  .mod-search:focus,
+  .mod-sort:focus { border-color: var(--green); box-shadow: 0 0 0 3px var(--green-glow); }
   .mod-info { flex: 1; min-width: 0; }
   .mod-sub {
     margin-top: 1px;
@@ -364,6 +447,8 @@
   footer span { font-size: 0.72rem; color: var(--muted); font-family: 'Space Mono', monospace; }
 
   @media (max-width: 540px) {
+    .modlist-tools { flex-direction: column; }
+    .mod-sort { width: 100%; }
     header { padding: 18px 20px; }
     .page { padding: 40px 16px; }
     #drop-zone { padding: 44px 24px; }
@@ -524,6 +609,8 @@ let pickedFile  = null;
 let parsedMods  = [];
 let packKind    = null; // "modrinth" or "curseforge"
 let dlPackData  = null; // { meta, slug }
+let dlModSearch = '';
+let dlModSort = 'verified-first';
 
 // ── routing ──────────────────────────────────────────────────
 function getSlug() {
@@ -830,6 +917,8 @@ function resetAll() {
 async function openDownloadPage(slug) {
   showPage('dl-page');
   dlPackData = null;
+  dlModSearch = '';
+  dlModSort = 'verified-first';
   const card = document.getElementById('dl-card');
   card.innerHTML = `<div style="padding:48px;text-align:center;color:var(--muted);font-family:'Space Mono',monospace;font-size:.8rem;">Loading pack…</div>`;
 
@@ -839,9 +928,7 @@ async function openDownloadPage(slug) {
     const meta = snap.data();
     meta.mods = await resolveModPages(meta.packKind, meta.mods || []);
     dlPackData = { meta, slug };
-    card.innerHTML = buildDLCard(meta);
-    card.querySelector('#dl-download-btn').addEventListener('click', () => triggerDownload());
-    card.querySelector('#dl-back-btn').addEventListener('click', goHome);
+    renderDownloadCard();
   } catch (_) {
     card.innerHTML = `
       <div class="not-found">
@@ -853,24 +940,71 @@ async function openDownloadPage(slug) {
   }
 }
 
+function renderDownloadCard() {
+  if (!dlPackData) return;
+  const card = document.getElementById('dl-card');
+  card.innerHTML = buildDLCard(dlPackData.meta);
+  bindDownloadCardEvents(card);
+}
+
+function bindDownloadCardEvents(card) {
+  const dlBtn = card.querySelector('#dl-download-btn');
+  const backBtn = card.querySelector('#dl-back-btn');
+  const searchInput = card.querySelector('#mod-search-input');
+  const sortSelect = card.querySelector('#mod-sort-select');
+
+  if (dlBtn) dlBtn.addEventListener('click', () => triggerDownload());
+  if (backBtn) backBtn.addEventListener('click', goHome);
+
+  if (searchInput) {
+    searchInput.addEventListener('input', e => {
+      dlModSearch = e.target.value;
+      renderDownloadCard();
+      const nextInput = document.getElementById('mod-search-input');
+      if (nextInput) {
+        nextInput.focus();
+        nextInput.setSelectionRange(nextInput.value.length, nextInput.value.length);
+      }
+    });
+  }
+
+  if (sortSelect) {
+    sortSelect.addEventListener('change', e => {
+      dlModSort = e.target.value;
+      renderDownloadCard();
+    });
+  }
+}
+
+function buildDLCard
+
 function buildDLCard(meta) {
-  const mods = meta.mods || [];
+  const allMods = Array.isArray(meta.mods) ? meta.mods : [];
+  const mods = getVisibleMods(allMods);
+  const verifiedCount = allMods.filter(hasModrinthPage).length;
+  const unverifiedCount = Math.max(0, allMods.length - verifiedCount);
+  const activeSearch = dlModSearch.trim();
+
   const modRows = mods.length
     ? mods.map(m => {
         const pageUrl = safeHttpUrl(m.pageUrl || m.url || '');
+        const verified = hasModrinthPage(m);
+        const safetyTitle = verified
+          ? 'Resolved to a Modrinth mod page. This is still a user-uploaded pack, not a safety guarantee.'
+          : 'No Modrinth page was verified for this file. Treat it with extra caution.';
         return `
-        <div class="mod-item">
-          <div class="mod-dot"></div>
+        <div class="mod-item" data-verified="${verified ? 'true' : 'false'}">
+          <span class="safety-icon ${verified ? 'verified' : 'unverified'}" title="${escAttr(safetyTitle)}">${verified ? '✓' : '◉'}</span>
           <div class="mod-info">
             <div class="mod-name">${esc(m.name || m.raw)}</div>
             ${m.raw ? `<div class="mod-sub">${esc(m.raw)}</div>` : ''}
           </div>
           ${pageUrl
-            ? `<a class="mod-page-btn" href="${esc(pageUrl)}" target="_blank" rel="noopener noreferrer">Page ↗</a>`
+            ? `<a class="mod-page-btn" href="${escAttr(pageUrl)}" target="_blank" rel="noopener noreferrer">Page ↗</a>`
             : `<span class="mod-page-btn disabled">No page</span>`}
         </div>`;
       }).join('')
-    : `<div class="no-modlist">No mod list available.</div>`;
+    : `<div class="no-modlist">${activeSearch ? 'No mods matched your search.' : 'No mod list available.'}</div>`;
 
   const ext = meta.extension || (String(meta.name || '').toLowerCase().endsWith('.zip') ? 'zip' : 'mrpack');
   const kind = meta.packKind === 'curseforge' ? 'CurseForge ZIP' : 'Modrinth MRPACK';
@@ -891,14 +1025,34 @@ function buildDLCard(meta) {
       </div>
     </div>
 
-    ${meta.packKind === 'curseforge' ? `
-    <div class="cf-note"><strong>Note:</strong> CurseForge mod names and page links use the CurseForge API when your Worker has a <code>CURSEFORGE_API_KEY</code> secret. Without that key, Packshare falls back to project/file IDs.</div>` : ''}
+    <div class="security-warning">
+      <strong>Only download modpacks from people you trust.</strong>
+      <small>Packshare links are user uploads. Unverified files may contain malware or unwanted changes included by the sender. Modrinth page checks help identify known projects, but they do not guarantee the pack itself is safe.</small>
+    </div>
 
-    ${mods.length ? `
+    ${allMods.length ? `
+    <div class="safety-summary">
+      <span class="safety-pill good">✓ ${verifiedCount} Modrinth-page matched</span>
+      <span class="safety-pill bad">◉ ${unverifiedCount} not Modrinth verified</span>
+    </div>` : ''}
+
+    ${meta.packKind === 'curseforge' ? `
+    <div class="cf-note"><strong>Note:</strong> CurseForge mod names and page links use the CurseForge API when your Worker has a <code>CURSEFORGE_API_KEY</code> secret. Without that key, Packshare falls back to project/file IDs. These entries will usually appear as unverified by Modrinth.</div>` : ''}
+
+    ${allMods.length ? `
     <div class="modlist-wrap">
       <div class="modlist-head">
         <h3>${meta.packKind === 'curseforge' ? 'CurseForge mods included' : 'Mods included'}</h3>
-        <span class="mod-count">${mods.length}</span>
+        <span class="mod-count">${mods.length}/${allMods.length}</span>
+      </div>
+      <div class="modlist-tools">
+        <input class="mod-search" id="mod-search-input" type="search" placeholder="Search mods…" value="${escAttr(dlModSearch)}" autocomplete="off">
+        <select class="mod-sort" id="mod-sort-select">
+          <option value="verified-first" ${dlModSort === 'verified-first' ? 'selected' : ''}>Verified first</option>
+          <option value="unverified-first" ${dlModSort === 'unverified-first' ? 'selected' : ''}>Unverified first</option>
+          <option value="name" ${dlModSort === 'name' ? 'selected' : ''}>Name A-Z</option>
+          <option value="name-desc" ${dlModSort === 'name-desc' ? 'selected' : ''}>Name Z-A</option>
+        </select>
       </div>
       <div class="modlist">${modRows}</div>
     </div>` : ''}
@@ -912,6 +1066,43 @@ function buildDLCard(meta) {
     </div>
   `;
 }
+
+function getVisibleMods(mods) {
+  const q = dlModSearch.trim().toLowerCase();
+  let out = mods.filter(m => {
+    if (!q) return true;
+    return [m.name, m.raw, m.projectID, m.fileID, m.pageUrl, m.url]
+      .some(v => String(v || '').toLowerCase().includes(q));
+  });
+
+  out = out.slice().sort((a, b) => {
+    const av = hasModrinthPage(a) ? 1 : 0;
+    const bv = hasModrinthPage(b) ? 1 : 0;
+    const an = String(a.name || a.raw || '').toLowerCase();
+    const bn = String(b.name || b.raw || '').toLowerCase();
+
+    if (dlModSort === 'verified-first' && av !== bv) return bv - av;
+    if (dlModSort === 'unverified-first' && av !== bv) return av - bv;
+    if (dlModSort === 'name-desc') return bn.localeCompare(an);
+    return an.localeCompare(bn);
+  });
+
+  return out;
+}
+
+function hasModrinthPage(mod) {
+  const url = safeHttpUrl(mod && (mod.pageUrl || mod.url || ''));
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    return (u.hostname === 'modrinth.com' || u.hostname === 'www.modrinth.com')
+      && u.pathname.startsWith('/mod/');
+  } catch (_) {
+    return false;
+  }
+}
+
+async function resolveModPages
 
 async function resolveModPages(kind, mods) {
   if (!Array.isArray(mods) || mods.length === 0) return [];
@@ -949,6 +1140,15 @@ function safeHttpUrl(url) {
 function triggerDownload() {
   if (!dlPackData) return;
   const { meta, slug } = dlPackData;
+
+  const confirmed = window.confirm(
+    'Only download modpacks from people you trust.\n\n' +
+    'This is a user-uploaded file, not an official Packshare verification. ' +
+    'Unverified files may contain malware or unwanted changes included by the sender.\n\n' +
+    'Do you want to continue downloading this pack?'
+  );
+  if (!confirmed) return;
+
   const url = `${WORKER_URL}/api/download/${slug}?name=${encodeURIComponent(meta.name)}&fileKey=${encodeURIComponent(meta.fileKey || '')}`;
   const a = document.createElement('a');
   a.href = url;
@@ -957,6 +1157,8 @@ function triggerDownload() {
   a.click();
   a.remove();
 }
+
+// ── utils
 
 // ── utils ────────────────────────────────────────────────────
 function randSlug() {
@@ -984,6 +1186,9 @@ function timeUntil(ms) {
 function titleCase(s) { return s.replace(/\b\w/g, c => c.toUpperCase()); }
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escAttr(s) {
+  return esc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 function showEl(id) {
   const e = document.getElementById(id);
