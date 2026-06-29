@@ -36,3 +36,8 @@ Import this repo into Vercel as a static project. No build command is needed.
 ## Safety UI update
 
 This version adds an unverified-upload warning to download pages, a required browser confirmation before downloading, Modrinth-page match indicators per mod, and modlist search/sort controls.
+
+
+## Security/modlist update
+
+This build lists Modrinth index mods and scans `.mrpack` override folders for embedded `.jar` files such as custom/local mods. Embedded override jars are shown as unverified instead of being hidden. The download page also shows SHA1/SHA512 hashes when available or computed.

@@ -276,6 +276,36 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  .hash-list {
+    display: grid;
+    gap: 2px;
+    margin-top: 5px;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.62rem;
+    color: var(--muted);
+  }
+  .hash-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+  }
+  .hash-label {
+    color: var(--green);
+    flex-shrink: 0;
+    opacity: 0.85;
+  }
+  .hash-value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .embedded-warning {
+    margin-top: 5px;
+    color: var(--danger);
+    font-family: 'Space Mono', monospace;
+    font-size: 0.64rem;
+  }
   .mod-page-btn {
     flex-shrink: 0;
     border: 1px solid var(--border-hi);
@@ -706,6 +736,52 @@ async function pickFile(f) {
   showEl('file-selected');
 }
 
+function normalizePath(path) {
+  return String(path || '').replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase();
+}
+
+function fileNameFromPath(path) {
+  return String(path || '').replace(/\\/g, '/').split('/').filter(Boolean).pop() || 'unknown.jar';
+}
+
+function isEmbeddedModJarPath(path) {
+  const p = normalizePath(path);
+  if (!p.endsWith('.jar') && !p.endsWith('.jar.disabled')) return false;
+
+  // Modrinth/Prism style override folders. These are local files bundled inside the pack,
+  // including custom mods that are not fetched from Modrinth.
+  return p.startsWith('overrides/mods/')
+    || p.startsWith('client-overrides/mods/')
+    || p.startsWith('server-overrides/mods/')
+    || p.startsWith('minecraft/mods/')
+    || p.startsWith('instance/minecraft/mods/');
+}
+
+function normalizeEmbeddedInstallPath(path) {
+  let p = normalizePath(path);
+  p = p.replace(/^overrides\//, '');
+  p = p.replace(/^client-overrides\//, '');
+  p = p.replace(/^server-overrides\//, '');
+  p = p.replace(/^minecraft\//, '');
+  p = p.replace(/^instance\/minecraft\//, '');
+  return p;
+}
+
+async function hashZipEntry(entry) {
+  const buf = await entry.async('arraybuffer');
+  const [sha1, sha512] = await Promise.all([
+    crypto.subtle.digest('SHA-1', buf).then(bufferToHex),
+    crypto.subtle.digest('SHA-512', buf).then(bufferToHex),
+  ]);
+  return { sha1, sha512 };
+}
+
+function bufferToHex(buffer) {
+  return Array.from(new Uint8Array(buffer))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 async function parseModrinthPack(zip) {
   const idx = zip.file('modrinth.index.json');
   if (!idx) throw new Error('That .mrpack is missing modrinth.index.json, so it does not look like a valid Modrinth pack.');
@@ -715,21 +791,61 @@ async function parseModrinthPack(zip) {
     throw new Error('That .mrpack has an invalid modrinth.index.json.');
   }
 
-  parsedMods = json.files
-    .filter(m => m.path && m.path.startsWith('mods/'))
-    .map(m => {
-      const raw  = m.path.replace(/^mods\//, '').replace(/\.jar(\.disabled)?$/, '');
-      const name = raw.replace(/[-_](\d[\w.\+-]*)$/, '').replace(/[-_]/g, ' ');
-      const hashes = m.hashes || {};
-      return {
-        name: titleCase(name),
-        raw,
-        sha1: hashes.sha1 || '',
-        sha512: hashes.sha512 || '',
-        pageUrl: '',
-      };
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const modsByPath = new Map();
+
+  for (const m of json.files) {
+    if (!m.path || !m.path.startsWith('mods/')) continue;
+
+    const fileName = fileNameFromPath(m.path);
+    const raw = fileName.replace(/\.jar(\.disabled)?$/i, '');
+    const name = raw.replace(/[-_](\d[\w.\+-]*)$/, '').replace(/[-_]/g, ' ');
+    const hashes = m.hashes || {};
+
+    modsByPath.set(normalizePath(m.path), {
+      name: titleCase(name),
+      raw,
+      path: m.path,
+      source: 'modrinth-index',
+      embedded: false,
+      sha1: String(hashes.sha1 || '').toLowerCase(),
+      sha512: String(hashes.sha512 || '').toLowerCase(),
+      pageUrl: '',
+    });
+  }
+
+  // Important security scan:
+  // Modrinth packs can also include custom/local .jar files inside overrides/mods.
+  // Those files may not appear in modrinth.index.json, so we list them separately
+  // as embedded/unverified mods instead of hiding them.
+  const embeddedEntries = Object.values(zip.files)
+    .filter(entry => !entry.dir && isEmbeddedModJarPath(entry.name));
+
+  for (const entry of embeddedEntries) {
+    const normalized = normalizePath(entry.name);
+    const apparentInstallPath = normalizeEmbeddedInstallPath(entry.name);
+
+    // If it is already represented by the official index path, do not duplicate it.
+    if (modsByPath.has(normalizePath(apparentInstallPath)) || modsByPath.has(normalized)) continue;
+
+    const fileName = fileNameFromPath(entry.name);
+    const raw = fileName.replace(/\.jar(\.disabled)?$/i, '');
+    const name = raw.replace(/[-_](\d[\w.\+-]*)$/, '').replace(/[-_]/g, ' ');
+    const hashes = await hashZipEntry(entry);
+
+    modsByPath.set(normalized, {
+      name: titleCase(name),
+      raw,
+      path: entry.name,
+      source: 'embedded-override',
+      embedded: true,
+      sha1: hashes.sha1,
+      sha512: hashes.sha512,
+      pageUrl: '',
+    });
+  }
+
+  parsedMods = Array.from(modsByPath.values())
+    .sort((a, b) => String(a.name || a.raw).localeCompare(String(b.name || b.raw)));
 }
 
 async function parseCurseForgePack(zip) {
@@ -976,11 +1092,30 @@ function bindDownloadCardEvents(card) {
   }
 }
 
+function shortHash(hash, front = 12, back = 8) {
+  const h = String(hash || '').trim();
+  if (!h) return '';
+  if (h.length <= front + back + 3) return h;
+  return `${h.slice(0, front)}…${h.slice(-back)}`;
+}
+
+function buildHashHTML(mod) {
+  const rows = [];
+  if (mod && mod.sha1) {
+    rows.push(`<div class="hash-row" title="${escAttr(mod.sha1)}"><span class="hash-label">SHA1</span><span class="hash-value">${esc(shortHash(mod.sha1))}</span></div>`);
+  }
+  if (mod && mod.sha512) {
+    rows.push(`<div class="hash-row" title="${escAttr(mod.sha512)}"><span class="hash-label">SHA512</span><span class="hash-value">${esc(shortHash(mod.sha512, 14, 10))}</span></div>`);
+  }
+  return rows.length ? `<div class="hash-list">${rows.join('')}</div>` : '';
+}
+
 function buildDLCard(meta) {
   const allMods = Array.isArray(meta.mods) ? meta.mods : [];
   const mods = getVisibleMods(allMods);
   const verifiedCount = allMods.filter(hasModrinthPage).length;
   const unverifiedCount = Math.max(0, allMods.length - verifiedCount);
+  const embeddedCount = allMods.filter(m => m && m.embedded).length;
   const activeSearch = dlModSearch.trim();
 
   const modRows = mods.length
@@ -996,6 +1131,9 @@ function buildDLCard(meta) {
           <div class="mod-info">
             <div class="mod-name">${esc(m.name || m.raw)}</div>
             ${m.raw ? `<div class="mod-sub">${esc(m.raw)}</div>` : ''}
+            ${m.path ? `<div class="mod-sub">${esc(m.path)}</div>` : ''}
+            ${m.embedded ? `<div class="embedded-warning">Embedded override file · not from the Modrinth index</div>` : ''}
+            ${buildHashHTML(m)}
           </div>
           ${pageUrl
             ? `<a class="mod-page-btn" href="${escAttr(pageUrl)}" target="_blank" rel="noopener noreferrer">Page ↗</a>`
@@ -1025,13 +1163,14 @@ function buildDLCard(meta) {
 
     <div class="security-warning">
       <strong>Only download modpacks from people you trust.</strong>
-      <small>Packshare links are user uploads. Unverified files may contain malware or unwanted changes included by the sender. Modrinth page checks help identify known projects, but they do not guarantee the pack itself is safe.</small>
+      <small>Packshare links are user uploads. Unverified files may contain malware or unwanted changes included by the sender. Modrinth page checks help identify known projects, but they do not guarantee the pack itself is safe. Embedded override files are shown separately and should be treated with extra caution.</small>
     </div>
 
     ${allMods.length ? `
     <div class="safety-summary">
       <span class="safety-pill good">✓ ${verifiedCount} Modrinth-page matched</span>
       <span class="safety-pill bad">◉ ${unverifiedCount} not Modrinth verified</span>
+      ${embeddedCount ? `<span class="safety-pill bad">${embeddedCount} embedded override file${embeddedCount === 1 ? '' : 's'}</span>` : ''}
     </div>` : ''}
 
     ${meta.packKind === 'curseforge' ? `
@@ -1069,7 +1208,7 @@ function getVisibleMods(mods) {
   const q = dlModSearch.trim().toLowerCase();
   let out = mods.filter(m => {
     if (!q) return true;
-    return [m.name, m.raw, m.projectID, m.fileID, m.pageUrl, m.url]
+    return [m.name, m.raw, m.path, m.source, m.projectID, m.fileID, m.sha1, m.sha512, m.pageUrl, m.url]
       .some(v => String(v || '').toLowerCase().includes(q));
   });
 
