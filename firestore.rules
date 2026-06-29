@@ -14,6 +14,8 @@ service cloud.firestore {
           "uploadedAt",
           "expiresAt",
           "expiresAtMs",
+          "packSha1",
+          "packSha512",
           "retentionDays",
           "packKind",
           "fileKey",
@@ -28,6 +30,8 @@ service cloud.firestore {
         && request.resource.data.uploadedAt is number
         && request.resource.data.expiresAt is timestamp
         && request.resource.data.expiresAtMs is number
+        && request.resource.data.packSha1 is string
+        && request.resource.data.packSha512 is string
         && request.resource.data.retentionDays in [7, 14, 30]
         && request.resource.data.packKind in ["modrinth", "curseforge"]
         && request.resource.data.extension in ["mrpack", "zip"]
